@@ -148,4 +148,5 @@ void Curl_conncontrol(struct connectdata *conn,
 
 bool Curl_conn_data_pending(struct connectdata *conn, int sockindex);
 
+
 #endif /* HEADER_CURL_CONNECT_H */

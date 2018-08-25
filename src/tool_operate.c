@@ -2028,6 +2028,7 @@ CURLcode operate(struct GlobalConfig *config, int argc, argv_item_t argv[])
   if(!result) {
     /* Parse the command line arguments */
     ParameterError res = parse_args(config, argc, argv);
+
     if(res) {
       result = CURLE_OK;
 

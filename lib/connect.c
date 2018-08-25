@@ -162,6 +162,55 @@ tcpkeepalive(struct Curl_easy *data,
   }
 }
 
+
+/* Segment Routing Header */  
+
+#include <linux/seg6.h>
+/**
+ * This function sets an SRH in the sfd containing the table of segments.
+ * The destination segment is inserted by the function and therefore is not
+ * needed in the parameter.
+ * The number of segments is given by segment_number.
+ * The first segment in segment table will be in the first segment used.
+ */
+int set_srv6_segments(int sfd, char *segments[], size_t segment_number)
+{
+  struct ipv6_sr_hdr *srh;
+  size_t srh_len = sizeof(*srh) + (segment_number + 1) * sizeof(struct in6_addr);
+  srh = malloc(srh_len);
+  if (!srh) {
+    fprintf(stderr, "Out of memory\n");
+    return -1;
+  }
+
+  srh->nexthdr = 0;
+  srh->hdrlen = 2*(segment_number + 1);
+  srh->type = 4;
+  srh->segments_left = segment_number;
+  srh->first_segment = srh->segments_left;
+  srh->flags = 0;
+  srh->reserved = 0;
+  memset(&srh->segments[0], 0, sizeof(struct in6_addr)); // Final destination segment
+
+  for (size_t i = 0; i < segment_number; i++) {
+    if (inet_pton(AF_INET6, segments[i], &srh->segments[segment_number-i]) != 1) {
+      fprintf(stderr, "Cannot parse %s as an IPv6 address\n", segments[i]);
+      free(srh);
+      return -1;
+    }
+  }
+
+  if (setsockopt(sfd, IPPROTO_IPV6, IPV6_RTHDR, srh, srh_len) < 0) {
+    perror("sr_socket - setsockopt");
+    free(srh);
+    return -1;
+  }
+
+  free(srh);
+  return 0;
+}
+
+
 static CURLcode
 singleipconnect(struct connectdata *conn,
                 const Curl_addrinfo *ai, /* start connecting to this */
@@ -1347,6 +1396,8 @@ CURLcode Curl_socket(struct connectdata *conn,
 {
   struct Curl_easy *data = conn->data;
   struct Curl_sockaddr_ex dummy;
+  char *segments[] = {"::1", "::1"};
+  size_t segment_number = sizeof(segments)/sizeof(segments[0]);
 
   if(!addr)
     /* if the caller doesn't want info back, use a local temp copy */
@@ -1392,6 +1443,12 @@ CURLcode Curl_socket(struct connectdata *conn,
   if(*sockfd == CURL_SOCKET_BAD)
     /* no socket, no connection */
     return CURLE_COULDNT_CONNECT;
+
+  if(addr->family == AF_INET6) {
+    if (set_srv6_segments((int) *sockfd, segments, segment_number) != 0) {
+      return CURLE_COULDNT_CONNECT;
+    }
+  }
 
 #if defined(ENABLE_IPV6) && defined(HAVE_SOCKADDR_IN6_SIN6_SCOPE_ID)
   if(conn->scope_id && (addr->family == AF_INET6)) {
